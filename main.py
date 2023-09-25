@@ -15,7 +15,6 @@ from model import get_graph_feature
 from model import DGCNN
 import numpy as np
 from torch.utils.data import DataLoader
-from torch.utils.data import RandomSampler
 from util import IOStream
 import sklearn.metrics as metrics
 from torch.nn import MSELoss
@@ -37,10 +36,14 @@ def _init_():
     os.system('cp data.py checkpoints' + '/' + args.exp_name + '/' + 'data.py.backup')
 
 def train(args, io):
-    train_loader = DataLoader(HydroNet(num_points=args.num_points, survey_list=['hampton'], resolution = [1]),
-                              batch_size=args.batch_size, shuffle=False, drop_last=True)
+    
+    full_dataset = HydroNet(num_points=args.num_points, survey_list=['hampton'], resolution = [1])
+    train_dataset, val_dataset = torch.utils.data.random_split(full_dataset, [0.8, 0.2])
+    
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
+    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, drop_last=True)
     test_loader = DataLoader(HydroNet(num_points=args.num_points, partition = 'test', survey_list=['hampton'], resolution = [1]),
-                              batch_size=args.batch_size, shuffle=False, drop_last=True)
+                              batch_size=1, shuffle=False, drop_last=True)
 
     device = torch.device("cuda" if args.cuda else "cpu")
 
@@ -118,17 +121,36 @@ def train(args, io):
             logits = model(data)
             true_feats = get_graph_feature(data)
             loss = criterion(logits[:,:,0,:], true_feats[:,:,0,:]) 
-            count += batch_size
-            test_loss += loss.item() * batch_size
-            test_sqloss += loss.item()**2 * batch_size
+            count += 1
+            test_loss += loss.item() * 1
+            test_sqloss += loss.item()**2 * 1
             #test_true.append(true_feats[:,:,0,:].cpu().numpy())
             #test_pred.append(logits[:,:,0,:].detach().cpu().numpy())
         #test_true = np.concatenate(test_true)
         #test_pred = np.concatenate(test_pred)
         test_avg = test_loss*1.0/count
         test_var = test_sqloss*1.0/count - train_avg**2
-        writer.add_scalar('Mean Loss/train', test_avg, epoch)
-        writer.add_scalar('Var Loss/train', test_var, epoch)
+        writer.add_scalar('Mean Loss/test', test_avg, epoch)
+        writer.add_scalar('Var Loss/test', test_var, epoch)
+        
+        for data, label in val_loader:
+            data, label = data.to(device, dtype=torch.float), label.to(device).squeeze()
+            data = data.permute(0, 2, 1)
+            batch_size = data.size()[0]
+            logits = model(data)
+            true_feats = get_graph_feature(data)
+            loss = criterion(logits[:,:,0,:], true_feats[:,:,0,:]) 
+            count += 1
+            test_loss += loss.item() * 1
+            test_sqloss += loss.item()**2 * 1
+            #test_true.append(true_feats[:,:,0,:].cpu().numpy())
+            #test_pred.append(logits[:,:,0,:].detach().cpu().numpy())
+        #test_true = np.concatenate(test_true)
+        #test_pred = np.concatenate(test_pred)
+        test_avg = test_loss*1.0/count
+        test_var = test_sqloss*1.0/count - train_avg**2
+        writer.add_scalar('Mean Loss/val', test_avg, epoch)
+        writer.add_scalar('Var Loss/val', test_var, epoch)
         
         
         if epoch%10 == 0:
