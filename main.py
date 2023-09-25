@@ -16,10 +16,11 @@ from model import DGCNN
 import numpy as np
 from torch.utils.data import DataLoader
 from torch.utils.data import RandomSampler
+from util import IOStream
 import sklearn.metrics as metrics
 from torch.nn import MSELoss
 from torch.utils.tensorboard import SummaryWriter
-
+import tqdm 
 
 writer = SummaryWriter()
 
@@ -66,21 +67,20 @@ def train(args, io):
 
     #best_test_acc = 0
     for epoch in range(args.epochs):
+        print("Epoch %d /n",epoch)
         scheduler.step()
         ####################
         # Train
         ####################
         train_loss = 0.0
+        train_sqloss = 0.0
         count = 0.0
         model.train()
-        train_pred = []
-        train_true = []
-        max_iter = 10000
-        iter = 0
-        for data, label in train_loader:
-            if(iter > max_iter):
-                print("here")
-                break
+        #train_pred = []
+        #train_true = []
+        loop = tqdm(train_loader)
+        for data, label in loop:
+            
             data, label = data.to(device, dtype=torch.float), label.to(device).squeeze()
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
@@ -92,20 +92,25 @@ def train(args, io):
             opt.step()
             count += batch_size
             train_loss += loss.item() * batch_size
-            #train_true.append(true_feats[:,:,0,:].cpu().numpy())
+            train_sqloss += loss.item()**2 * batch_size
+            #train_pred.append(true_feats[:,:,0,:].cpu().numpy())
             #train_pred.append(logits[:,:,0,:].detach().cpu().numpy())
             iter+=1
         #train_true = np.concatenate(train_true)
         #train_pred = np.concatenate(train_pred)
-        writer.add_scalar('Loss/train', train_loss*1.0/count, epoch)
+        train_avg = train_loss*1.0/count
+        train_var = train_sqloss*1.0/count - train_avg**2
+        writer.add_scalar('Mean Loss/train', train_avg, epoch)
+        writer.add_scalar('Var Loss/train', train_var, epoch)
         ####################
         # Test
         ####################
         test_loss = 0.0
+        test_sqloss = 0.0
         count = 0.0
         model.eval()
-        test_pred = []
-        test_true = []
+        #test_pred = []
+        #test_true = []
         for data, label in test_loader:
             data, label = data.to(device, dtype=torch.float), label.to(device).squeeze()
             data = data.permute(0, 2, 1)
@@ -113,13 +118,17 @@ def train(args, io):
             logits = model(data)
             true_feats = get_graph_feature(data)
             loss = criterion(logits[:,:,0,:], true_feats[:,:,0,:]) 
-
+            count += batch_size
             test_loss += loss.item() * batch_size
+            test_sqloss += loss.item()**2 * batch_size
             #test_true.append(true_feats[:,:,0,:].cpu().numpy())
             #test_pred.append(logits[:,:,0,:].detach().cpu().numpy())
         #test_true = np.concatenate(test_true)
         #test_pred = np.concatenate(test_pred)
-        writer.add_scalar('Loss/test', test_loss*1.0/count, epoch)
+        test_avg = test_loss*1.0/count
+        test_var = test_sqloss*1.0/count - train_avg**2
+        writer.add_scalar('Mean Loss/train', test_avg, epoch)
+        writer.add_scalar('Var Loss/train', test_var, epoch)
         
         
         if epoch%10 == 0:
@@ -170,6 +179,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     _init_()
+
+    io = IOStream('checkpoints/' + args.exp_name + '/run.log')
+    io.cprint(str(args))
 
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     torch.manual_seed(args.seed)
