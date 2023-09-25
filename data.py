@@ -27,7 +27,6 @@ class HydroNet(Dataset):
         self.survey_length = []
 
         for i in range(len(survey_list)):
-            print(i)
             
             if (self.partition == "test"):
                 dataset = ds.dataset(os.path.join(self.BASE_DIR, 'data', survey_list[i], "parquet", "rej_" + survey_list[i] + ".parquet"), format="parquet", partitioning="hive")
@@ -58,8 +57,6 @@ class HydroNet(Dataset):
         
         survey = sum(item > survey_length - 1)
         item =  item - np.insert(survey_length,0,0)[survey]
-        
-        print(survey,item)
         
         fragment_data, fragment_label = self.load_data(self.data[survey][item])
         
