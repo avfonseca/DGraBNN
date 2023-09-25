@@ -22,13 +22,12 @@ class HydroNet(Dataset):
         
         self.pc_tree = []
         self.pc = []
-        print(len(survey_list))
-        self.data = [[]]*len(survey_list)
-        print(len(self.data))
-        self.fragment_length = [[]]*len(survey_list)
+        self.data = []
+        self.fragment_length = []
         self.survey_length = []
 
         for i in range(len(survey_list)):
+            print(i)
             
             if (self.partition == "test"):
                 dataset = ds.dataset(os.path.join(self.BASE_DIR, 'data', survey_list[i], "parquet", "rej_" + survey_list[i] + ".parquet"), format="parquet", partitioning="hive")
@@ -37,25 +36,32 @@ class HydroNet(Dataset):
             else:
                 dataset = ds.dataset(os.path.join(self.BASE_DIR, 'data', survey_list[i], "parquet", "acc_" + survey_list[i] + ".parquet"), format="parquet", partitioning="hive")
                 iterable = list(dataset.get_fragments())
-
+                
+            
+            survey_length = 0
+            self.data.append(iterable)
             for fragment in iterable:
                     tb = fragment.to_table(columns = ["Flag"])
                     length = tb.num_rows
-                    self.data[i].append(iterable)
-                    self.fragment_length[i].append(length)
+                    self.fragment_length.append(length)
+                    survey_length += 1
            
-               
+            self.survey_length.append(survey_length)
             self.load_pointcloud(survey_list[i],self.resolution)
-            self.survey_length.append(len(self.fragment_length[i]))
-        
+            
         self.dataset_length = sum(self.survey_length)
 
     def __getitem__(self, item):
         
          # Randomly get an item from selected fragment
-        survey = sum(item > self.survey_length - 1)
-        fragment = item - np.insert(self.survey_length,0,0)[survey]
-        fragment_data, fragment_label = self.load_data(self.data[survey][fragment])
+        survey_length = np.cumsum(np.array(self.survey_length))
+        
+        survey = sum(item > survey_length - 1)
+        item =  item - np.insert(survey_length,0,0)[survey]
+        
+        print(survey,item)
+        
+        fragment_data, fragment_label = self.load_data(self.data[survey][item])
         
         
         choice = random.randint(0, fragment_data.shape[0])
