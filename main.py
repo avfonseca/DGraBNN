@@ -129,9 +129,17 @@ def train(args, io):
         #test_true = np.concatenate(test_true)
         #test_pred = np.concatenate(test_pred)
         test_avg = test_loss*1.0/count
-        test_var = test_sqloss*1.0/count - train_avg**2
+        test_var = test_sqloss*1.0/count - test_avg**2
         writer.add_scalar('Mean Loss/test', test_avg, epoch)
         writer.add_scalar('Var Loss/test', test_var, epoch)
+        
+        ####################
+        # Validation
+        ####################
+        test_loss = 0.0
+        test_sqloss = 0.0
+        count = 0.0
+        model.eval()
         
         for data, label in val_loader:
             data, label = data.to(device, dtype=torch.float), label.to(device).squeeze()
@@ -141,16 +149,16 @@ def train(args, io):
             true_feats = get_graph_feature(data)
             loss = criterion(logits[:,:,0,:], true_feats[:,:,0,:]) 
             count += 1
-            test_loss += loss.item() * 1
-            test_sqloss += loss.item()**2 * 1
+            val_loss += loss.item() * 1
+            val_sqloss += loss.item()**2 * 1
             #test_true.append(true_feats[:,:,0,:].cpu().numpy())
             #test_pred.append(logits[:,:,0,:].detach().cpu().numpy())
         #test_true = np.concatenate(test_true)
         #test_pred = np.concatenate(test_pred)
-        test_avg = test_loss*1.0/count
-        test_var = test_sqloss*1.0/count - train_avg**2
-        writer.add_scalar('Mean Loss/val', test_avg, epoch)
-        writer.add_scalar('Var Loss/val', test_var, epoch)
+        val_avg = test_loss*1.0/count
+        val_var = test_sqloss*1.0/count - val_avg**2
+        writer.add_scalar('Mean Loss/val', val_avg, epoch)
+        writer.add_scalar('Var Loss/val', val_var, epoch)
         
         
         if epoch%10 == 0:
