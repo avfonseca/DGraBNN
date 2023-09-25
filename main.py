@@ -81,8 +81,7 @@ def train(args, io):
         model.train()
         #train_pred = []
         #train_true = []
-        loop = tqdm(train_loader)
-        for data, label in loop:
+        for data, label in train_loader:
             
             data, label = data.to(device, dtype=torch.float), label.to(device).squeeze()
             data = data.permute(0, 2, 1)
@@ -136,8 +135,8 @@ def train(args, io):
         ####################
         # Validation
         ####################
-        test_loss = 0.0
-        test_sqloss = 0.0
+        val_loss = 0.0
+        val_sqloss = 0.0
         count = 0.0
         model.eval()
         
