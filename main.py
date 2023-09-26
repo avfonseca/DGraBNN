@@ -12,6 +12,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from data import HydroNet
 from model import get_graph_feature
+from torch.utils.data import random_split
 from model import DGCNN
 import numpy as np
 from torch.utils.data import DataLoader
@@ -36,9 +37,9 @@ def _init_():
     os.system('cp data.py checkpoints' + '/' + args.exp_name + '/' + 'data.py.backup')
 
 def train(args, io):
-    
-    full_dataset = HydroNet(num_points=args.num_points, survey_list=['hampton'], resolution = [1])
-    train_dataset, val_dataset = torch.utils.data.random_split(full_dataset, [0.8, 0.2])
+    print(args.num_points)
+    ds = HydroNet(num_points=args.num_points, survey_list=['hampton'], resolution = [1])
+    train_dataset, val_dataset = random_split(ds, [0.75, 0.25])
     
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, drop_last=True)
@@ -46,6 +47,7 @@ def train(args, io):
                               batch_size=1, shuffle=False, drop_last=True)
 
     device = torch.device("cuda" if args.cuda else "cpu")
+    
 
     #Try to load models
     if args.model == 'dgcnn':
@@ -70,7 +72,7 @@ def train(args, io):
 
     #best_test_acc = 0
     for epoch in range(args.epochs):
-        print("Epoch %d /n",epoch)
+        print("Epoch " + str(epoch))
         scheduler.step()
         ####################
         # Train
@@ -97,7 +99,6 @@ def train(args, io):
             train_sqloss += loss.item()**2 * batch_size
             #train_pred.append(true_feats[:,:,0,:].cpu().numpy())
             #train_pred.append(logits[:,:,0,:].detach().cpu().numpy())
-            iter+=1
         #train_true = np.concatenate(train_true)
         #train_pred = np.concatenate(train_pred)
         train_avg = train_loss*1.0/count
@@ -135,29 +136,29 @@ def train(args, io):
         ####################
         # Validation
         ####################
-        val_loss = 0.0
-        val_sqloss = 0.0
-        count = 0.0
-        model.eval()
+        #val_loss = 0.0
+        #val_sqloss = 0.0
+        #count = 0.0
+        #model.eval()
         
-        for data, label in val_loader:
-            data, label = data.to(device, dtype=torch.float), label.to(device).squeeze()
-            data = data.permute(0, 2, 1)
-            batch_size = data.size()[0]
-            logits = model(data)
-            true_feats = get_graph_feature(data)
-            loss = criterion(logits[:,:,0,:], true_feats[:,:,0,:]) 
-            count += 1
-            val_loss += loss.item() * 1
-            val_sqloss += loss.item()**2 * 1
+        #for data, label in val_loader:
+        #    data, label = data.to(device, dtype=torch.float), label.to(device).squeeze()
+        #    data = data.permute(0, 2, 1)
+        #    batch_size = data.size()[0]
+        #    logits = model(data)
+        #    true_feats = get_graph_feature(data)
+        #    loss = criterion(logits[:,:,0,:], true_feats[:,:,0,:]) 
+        #    count += 1
+        #    val_loss += loss.item() * 1
+        #    val_sqloss += loss.item()**2 * 1
             #test_true.append(true_feats[:,:,0,:].cpu().numpy())
             #test_pred.append(logits[:,:,0,:].detach().cpu().numpy())
         #test_true = np.concatenate(test_true)
         #test_pred = np.concatenate(test_pred)
-        val_avg = test_loss*1.0/count
-        val_var = test_sqloss*1.0/count - val_avg**2
-        writer.add_scalar('Mean Loss/val', val_avg, epoch)
-        writer.add_scalar('Var Loss/val', val_var, epoch)
+        #val_avg = test_loss*1.0/count
+        #val_var = test_sqloss*1.0/count - val_avg**2
+        #writer.add_scalar('Mean Loss/val', val_avg, epoch)
+        #writer.add_scalar('Var Loss/val', val_var, epoch)
         
         
         if epoch%10 == 0:
@@ -177,7 +178,7 @@ if __name__ == "__main__":
                         help='Model to use, [pointnet, dgcnn]')
     parser.add_argument('--dataset', type=str, default='modelnet40', metavar='N',
                         choices=['modelnet40'])
-    parser.add_argument('--batch_size', type=int, default=32, metavar='batch_size',
+    parser.add_argument('--batch_size', type=int, default=8, metavar='batch_size',
                         help='Size of batch)')
     parser.add_argument('--test_batch_size', type=int, default=16, metavar='batch_size',
                         help='Size of batch)')

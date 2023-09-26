@@ -60,8 +60,7 @@ class HydroNet(Dataset):
         
         fragment_data, fragment_label = self.load_data(self.data[survey][item])
         
-        
-        choice = random.randint(0, fragment_data.shape[0])
+        choice = random.randint(0, fragment_data.shape[0]-1)
         
         point = fragment_data[choice,:]
         label = fragment_label[choice,:]
