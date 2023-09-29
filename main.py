@@ -57,6 +57,9 @@ def train(args, io):
 
     model = nn.DataParallel(model)
     print("Let's use", torch.cuda.device_count(), "GPUs!")
+    
+    
+    
 
     if args.use_sgd:
         print("Use SGD")
@@ -71,7 +74,6 @@ def train(args, io):
 
     for epoch in range(args.epochs):
         print("Epoch " + str(epoch))
-        scheduler.step()
         ####################
         # Train
         ####################
@@ -91,6 +93,7 @@ def train(args, io):
             true_feats = get_graph_feature(data)
             loss = criterion(logits[:,:,0,:], true_feats[:,:,0,:]) 
             loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
             count += batch_size
             train_loss += loss.item() * batch_size
@@ -100,6 +103,7 @@ def train(args, io):
         train_var = train_sqloss*1.0/count - train_avg**2
         writer.add_scalar('Mean Loss/train', train_avg, epoch)
         writer.add_scalar('Var Loss/train', train_var, epoch)
+        scheduler.step()
         ####################
         # Test
         ####################
@@ -144,8 +148,8 @@ def train(args, io):
             val_loss += loss.item() * batch_size
             val_sqloss += loss.item()**2 * batch_size
             val_pred.append(loss.item() < 0.5)
-        val_avg = test_loss*1.0/count
-        val_var = test_sqloss*1.0/count - val_avg**2
+        val_avg = val_loss*1.0/count
+        val_var = val_sqloss*1.0/count - val_avg**2
         writer.add_scalar('Mean Loss/val', val_avg, epoch)
         writer.add_scalar('Var Loss/val', val_var, epoch)
         

@@ -71,7 +71,7 @@ class HydroNet(Dataset):
         mean = self.pc_tree[survey][self.resolution[0]][1]
         cov = self.pc_tree[survey][self.resolution[0]][2]
         
-        [_, idx, _] = tree.search_hybrid_vector_3d(point,self.num_points,100)
+        [_, idx, _] = tree.search_hybrid_vector_3d(point,100,self.num_points)
         
         nn = np.asarray(self.pc[survey][self.resolution[0]].points)[idx]
               
