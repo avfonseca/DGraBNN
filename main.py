@@ -90,8 +90,7 @@ def train(args, io):
             batch_size = data.size()[0]
             opt.zero_grad()
             logits = model(data)
-            true_feats = get_graph_feature(data)
-            loss = criterion(logits[:,:,0,:], true_feats[:,:,0,:]) 
+            loss = criterion(logits, data) 
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
@@ -117,16 +116,13 @@ def train(args, io):
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
             logits = model(data)
-            true_feats = get_graph_feature(data)
-            loss = criterion(logits[:,:,0,:], true_feats[:,:,0,:]) 
+            loss = criterion(logits[:,:,0], data[:,:,0]) 
             count += 1
             test_loss += loss.item() * batch_size
             test_sqloss += loss.item()**2 * batch_size
             test_pred.append(loss.item() < 0.5)
         test_avg = test_loss*1.0/count
-        test_var = test_sqloss*1.0/count - test_avg**2
         writer.add_scalar('Mean Loss/test', test_avg, epoch)
-        writer.add_scalar('Var Loss/test', test_var, epoch)
         
         ####################
         # Validation
@@ -142,8 +138,7 @@ def train(args, io):
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
             logits = model(data)
-            true_feats = get_graph_feature(data)
-            loss = criterion(logits[:,:,0,:], true_feats[:,:,0,:]) 
+            loss = criterion(logits, data) 
             count += 1
             val_loss += loss.item() * batch_size
             val_sqloss += loss.item()**2 * batch_size
@@ -155,7 +150,7 @@ def train(args, io):
         
         
         y_pred = np.concatenate((np.array(train_pred),np.array(val_pred),np.array(test_pred)))
-        y_true = np.concatenate((np.ones(np.array(train_pred).shape),np.ones(np.array(val_pred).shape),np.ones(np.array(test_pred).shape)))
+        y_true = np.concatenate((np.ones(np.array(train_pred).shape),np.ones(np.array(val_pred).shape),np.zeros(np.array(test_pred).shape)))
     
         
         writer.add_figure("Confusion matrix", createConfusionMatrix(y_true,y_pred), epoch)
