@@ -41,7 +41,7 @@ def train(args, io):
     train_dataset, val_dataset = random_split(ds, [0.75, 0.25])
     
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.test_batch_size, shuffle=False, drop_last=True)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
     test_loader = DataLoader(HydroNet(num_points=args.num_points, partition = 'test', survey_list=['hampton'], resolution = [1]),
                               args.test_batch_size, shuffle=False, drop_last=True)
 
@@ -58,15 +58,13 @@ def train(args, io):
     model = nn.DataParallel(model)
     print("Let's use", torch.cuda.device_count(), "GPUs!")
     
-    
-    
 
     if args.use_sgd:
         print("Use SGD")
-        opt = optim.SGD(model.parameters(), lr=args.lr*100, momentum=args.momentum, weight_decay=1e-4)
+        opt = optim.SGD(model.parameters(), lr=args.lr*100, momentum=args.momentum, weight_decay=1e-6)
     else:
         print("Use Adam")
-        opt = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
+        opt = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-6)
 
     scheduler = CosineAnnealingLR(opt, args.epochs, eta_min=args.lr)
     
@@ -155,9 +153,9 @@ def train(args, io):
         
         writer.add_figure("Confusion matrix", createConfusionMatrix(y_true,y_pred), epoch)
         
-        if epoch%10 == 0:
+        if epoch%100 == 0:
             io.cprint("saving model")
-            torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name) 
+            torch.save(model.state_dict(), 'checkpoints/%s/models/model_%s.t7' % (args.exp_name,str(epoch))) 
 
 
 
