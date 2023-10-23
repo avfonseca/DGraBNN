@@ -41,7 +41,7 @@ def train(args, io):
     train_dataset, val_dataset = random_split(ds, [0.75, 0.25])
     
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
-    val_loader = DataLoader(val_dataset, batch_size=args.test_batch_size, shuffle=False, drop_last=True)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
     test_loader = DataLoader(HydroNet(num_points=args.num_points, partition = 'test', survey_list=['hampton'], resolution = [1]),
                               args.test_batch_size, shuffle=False, drop_last=True)
 
@@ -58,15 +58,13 @@ def train(args, io):
     model = nn.DataParallel(model)
     print("Let's use", torch.cuda.device_count(), "GPUs!")
     
-    
-    
 
     if args.use_sgd:
         print("Use SGD")
-        opt = optim.SGD(model.parameters(), lr=args.lr*100, momentum=args.momentum, weight_decay=1e-4)
+        opt = optim.SGD(model.parameters(), lr=args.lr*100, momentum=args.momentum, weight_decay=1e-6)
     else:
         print("Use Adam")
-        opt = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
+        opt = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-6)
 
     scheduler = CosineAnnealingLR(opt, args.epochs, eta_min=args.lr)
     
@@ -90,8 +88,7 @@ def train(args, io):
             batch_size = data.size()[0]
             opt.zero_grad()
             logits = model(data)
-            true_feats = get_graph_feature(data)
-            loss = criterion(logits[:,:,0,:], true_feats[:,:,0,:]) 
+            loss = criterion(logits, data) 
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
@@ -117,16 +114,13 @@ def train(args, io):
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
             logits = model(data)
-            true_feats = get_graph_feature(data)
-            loss = criterion(logits[:,:,0,:], true_feats[:,:,0,:]) 
+            loss = criterion(logits[:,:,0], data[:,:,0]) 
             count += 1
             test_loss += loss.item() * batch_size
             test_sqloss += loss.item()**2 * batch_size
             test_pred.append(loss.item() < 0.5)
         test_avg = test_loss*1.0/count
-        test_var = test_sqloss*1.0/count - test_avg**2
         writer.add_scalar('Mean Loss/test', test_avg, epoch)
-        writer.add_scalar('Var Loss/test', test_var, epoch)
         
         ####################
         # Validation
@@ -142,8 +136,7 @@ def train(args, io):
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
             logits = model(data)
-            true_feats = get_graph_feature(data)
-            loss = criterion(logits[:,:,0,:], true_feats[:,:,0,:]) 
+            loss = criterion(logits, data) 
             count += 1
             val_loss += loss.item() * batch_size
             val_sqloss += loss.item()**2 * batch_size
@@ -155,14 +148,14 @@ def train(args, io):
         
         
         y_pred = np.concatenate((np.array(train_pred),np.array(val_pred),np.array(test_pred)))
-        y_true = np.concatenate((np.ones(np.array(train_pred).shape),np.ones(np.array(val_pred).shape),np.ones(np.array(test_pred).shape)))
+        y_true = np.concatenate((np.ones(np.array(train_pred).shape),np.ones(np.array(val_pred).shape),np.zeros(np.array(test_pred).shape)))
     
         
         writer.add_figure("Confusion matrix", createConfusionMatrix(y_true,y_pred), epoch)
         
-        if epoch%10 == 0:
+        if epoch%100 == 0:
             io.cprint("saving model")
-            torch.save(model.state_dict(), 'checkpoints/%s/models/model.t7' % args.exp_name) 
+            torch.save(model.state_dict(), 'checkpoints/%s/models/model_%s.t7' % (args.exp_name,str(epoch))) 
 
 
 
