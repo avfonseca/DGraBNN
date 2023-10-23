@@ -56,6 +56,8 @@ class DGCNN(nn.Module):
         self.arg = args
         self.k = args.k
         self.emb_dims = args.emb_dims
+        self.batch_size = args.batch_size
+        self.num_points = args.num_points
         
         
         self.bn1 = nn.BatchNorm2d(64)
@@ -102,9 +104,13 @@ class DGCNN(nn.Module):
         self.bn11 = nn.BatchNorm1d(128)
         self.dp6 = nn.Dropout(p=0.5)
         
-        self.linear7 = nn.Linear(128, 6*self.k)
-        self.bn12 = nn.BatchNorm1d(6*self.k)
+        self.linear7 = nn.Linear(128, 512)
+        self.bn12 = nn.BatchNorm1d(512)
         self.dp7 = nn.Dropout(p=0.5)
+        
+        self.linear8 = nn.Linear(512, 3 * (self.num_points + 1))
+        self.bn13 = nn.BatchNorm1d(3 * (self.num_points + 1))
+        self.dp8 = nn.Dropout(p=0.5)
            
 
     def forward(self, x):
@@ -136,24 +142,28 @@ class DGCNN(nn.Module):
 
         x = F.leaky_relu(self.bn6(self.linear1(x)), negative_slope=0.2)
         x = self.dp1(x)
+        
         x = F.leaky_relu(self.bn7(self.linear2(x)), negative_slope=0.2)
         x = self.dp2(x)
         
         x = F.leaky_relu(self.bn8(self.linear3(x)), negative_slope=0.2)
         x = self.dp3(x)
+        
         x= F.leaky_relu(self.bn9(self.linear4(x)), negative_slope=0.2)
         x = self.dp4(x)
         
         x = F.leaky_relu(self.bn10(self.linear5(x)), negative_slope=0.2)
         x = self.dp5(x)
+        
         x = F.leaky_relu(self.bn11(self.linear6(x)), negative_slope=0.2)
         x = self.dp6(x)
+        
         x = F.leaky_relu(self.bn12(self.linear7(x)), negative_slope=0.2)
         x = self.dp7(x)
         
-        x = x.view(batch_size,6,1,-1)
-        
-        
-        return x
+        x = F.leaky_relu(self.bn13(self.linear8(x)), negative_slope=0.2)
+        x = self.dp8(x)
+            
+        return x.view(batch_size,3,-1)
  
 
