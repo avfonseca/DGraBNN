@@ -1,19 +1,7 @@
-import open3d as o3d
-import numpy as np
-import pyarrow.dataset as ds
-import numpy as np
-from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
-import os
-import numpy as np
+
 import torch
-import torch.distributions as td
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.nn import MSELoss
-import sklearn.metrics as metrics
 
 def knn(x, k):
     inner = -2*torch.matmul(x.transpose(2, 1), x)
@@ -49,6 +37,127 @@ def get_graph_feature(x, k=20, idx=None):
   
     return feature
 
+
+class DGCNN_VAE(nn.Module):
+    def __init__(self,args):
+        super(DGCNN_VAE, self).__init__()
+        self.arg = args
+        self.k = args.k
+        self.emb_dims = args.emb_dims
+        self.batch_size = args.batch_size
+        self.num_points = args.num_points
+
+        #encode
+        self.conv1 = nn.Sequential(nn.Conv2d(6, 64, kernel_size=1, bias=False),
+                                   nn.BatchNorm2d(64),
+                                   nn.LeakyReLU(negative_slope=0.2))
+        self.conv2 = nn.Sequential(nn.Conv2d(64*2, 64, kernel_size=1, bias=False),
+                                   nn.BatchNorm2d(64),
+                                   nn.LeakyReLU(negative_slope=0.2))
+        self.conv3 = nn.Sequential(nn.Conv2d(64*2, 128, kernel_size=1, bias=False),
+                                   nn.BatchNorm2d(128),
+                                   nn.LeakyReLU(negative_slope=0.2))
+        self.conv4 = nn.Sequential(nn.Conv2d(128*2, 256, kernel_size=1, bias=False),
+                                   nn.BatchNorm2d(256),
+                                   nn.LeakyReLU(negative_slope=0.2))
+        self.conv5 = nn.Sequential(nn.Conv1d(512, 1024, kernel_size=1, bias=False),
+                                   nn.BatchNorm2d(1024),
+                                   nn.LeakyReLU(negative_slope=0.2))
+        self.linear1 = nn.Linear(1024*2, 512, bias=False)
+        self.bn6 = nn.BatchNorm1d(512)
+        self.dp1 = nn.Dropout(p=0.5)
+        
+        
+        #mean and var
+        self.linear41 = nn.Linear(512,self.emb_dims)
+        self.bn91 = nn.BatchNorm1d(self.emb_dims)
+        self.dp41 = nn.Dropout(p=0.5)
+        
+        self.linear42 = nn.Linear(512,self.emb_dims)
+        self.bn92 = nn.BatchNorm1d(self.emb_dims)
+        self.dp42 = nn.Dropout(p=0.5)
+        
+        #decoder
+        self.linear5 = nn.Linear(self.emb_dims, 64)
+        self.bn10 = nn.BatchNorm1d(64)
+        self.dp5 = nn.Dropout(p=0.5)
+        
+        self.linear6 = nn.Linear(64, 128)
+        self.bn11 = nn.BatchNorm1d(128)
+        self.dp6 = nn.Dropout(p=0.5)
+        
+        self.linear7 = nn.Linear(128, 512)
+        self.bn12 = nn.BatchNorm1d(512)
+        self.dp7 = nn.Dropout(p=0.5)
+        
+        self.linear8 = nn.Linear(512, 3 * (self.num_points + 1))
+        self.bn13 = nn.BatchNorm1d(3 * (self.num_points + 1))
+        
+        
+    def reparameterize(self, mu, logvar):
+        """
+        Reparameterization trick to sample from N(mu, var) from
+        N(0,1).
+        :param mu: (Tensor) Mean of the latent Gaussian [B x D]
+        :param logvar: (Tensor) Standard deviation of the latent Gaussian [B x D]
+        :return: (Tensor) [B x D]
+        """
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return eps * std + mu
+           
+
+    def forward(self, x):
+        batch_size = x.size(0)   
+        x = get_graph_feature(x, k=self.k)
+        x = self.conv1(x)
+        x1 = x.max(dim=-1, keepdim=False)[0]   
+  
+        x = get_graph_feature(x1, k=self.k)
+        x = self.conv2(x)
+        x2 = x.max(dim=-1, keepdim=False)[0]
+
+        x = get_graph_feature(x2, k=self.k)
+        x = self.conv3(x)
+        x3 = x.max(dim=-1, keepdim=False)[0]
+
+        x = get_graph_feature(x3, k=self.k)
+    
+        x = self.conv4(x)
+        x4 = x.max(dim=-1, keepdim=False)[0]
+
+        x = torch.cat((x1, x2, x3, x4), dim=1)
+
+        x = self.conv5(x)
+        x1 = F.adaptive_max_pool1d(x, 1).view(batch_size, -1)
+        x2 = F.adaptive_avg_pool1d(x, 1).view(batch_size, -1)
+        x = torch.cat((x1, x2), 1)
+
+        x = F.leaky_relu(self.bn6(self.linear1(x)), negative_slope=0.2)
+        x = self.dp1(x)
+        
+        xu= F.leaky_relu(self.bn91(self.linear41(x)), negative_slope=0.2)
+        xu = self.dp41(xu)
+        
+        xv= F.leaky_relu(self.bn92(self.linear42(x)), negative_slope=0.2)
+        xv = self.dp42(xv)
+
+        z = self.reparameterize(xu, xv)
+        
+        x = F.leaky_relu(self.bn10(self.linear5(z)), negative_slope=0.2)
+        x = self.dp5(x)
+        
+        x = F.leaky_relu(self.bn11(self.linear6(x)), negative_slope=0.2)
+        x = self.dp6(x)
+        
+        x = F.leaky_relu(self.bn12(self.linear7(x)), negative_slope=0.2)
+        x = self.dp7(x)
+        
+        x = F.leaky_relu(self.bn13(self.linear8(x)), negative_slope=0.2)
+        
+            
+        return x.view(batch_size,3,-1),xu,xv
+ 
 
 class DGCNN(nn.Module):
     def __init__(self,args):
@@ -165,5 +274,3 @@ class DGCNN(nn.Module):
         x = self.dp8(x)
             
         return x.view(batch_size,3,-1)
- 
-

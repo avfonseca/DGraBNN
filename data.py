@@ -59,7 +59,7 @@ class HydroNet(Dataset):
         item =  item - np.insert(survey_length,0,0)[survey]
         
         fragment_data, fragment_label = self.load_data(self.data[survey][item])
-        
+            
         choice = random.randint(0, fragment_data.shape[0]-1)
         
         point = fragment_data[choice,:]
@@ -71,7 +71,7 @@ class HydroNet(Dataset):
         mean = self.pc_tree[survey][self.resolution[0]][1]
         cov = self.pc_tree[survey][self.resolution[0]][2]
         
-        [_, idx, _] = tree.search_hybrid_vector_3d(point,100,self.num_points)
+        [_, idx, _] = tree.search_hybrid_vector_3d(point,500,self.num_points)
         
         nn = np.asarray(self.pc[survey][self.resolution[0]].points)[idx]
               

@@ -7,18 +7,15 @@ import multiprocessing
 import argparse
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from data import HydroNet
-from model import get_graph_feature
 from torch.utils.data import random_split
-from model import DGCNN
+from model import DGCNN,DGCNN_VAE
 import numpy as np
 from torch.utils.data import DataLoader
 from util import IOStream
 from util import createConfusionMatrix
-import sklearn.metrics as metrics
 from torch.nn import MSELoss
 from torch.utils.tensorboard import SummaryWriter
 
@@ -37,13 +34,14 @@ def _init_():
     os.system('cp data.py checkpoints' + '/' + args.exp_name + '/' + 'data.py.backup')
 
 def train(args, io):
-    ds = HydroNet(num_points=args.num_points, survey_list=['hampton'], resolution = [1])
-    train_dataset, val_dataset = random_split(ds, [0.75, 0.25])
+    train_ds = HydroNet(num_points=args.num_points, survey_list=['hampton'], resolution = [1])
+    test_ds = HydroNet(num_points=args.num_points, partition = 'test', survey_list=['hampton'], resolution = [1])
+    
+    train_dataset, val_dataset = random_split(train_ds, [0.8, 0.2])
     
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
-    test_loader = DataLoader(HydroNet(num_points=args.num_points, partition = 'test', survey_list=['hampton'], resolution = [1]),
-                              args.test_batch_size, shuffle=False, drop_last=True)
+    test_loader = DataLoader(test_ds, args.test_batch_size, shuffle=False, drop_last=True)
 
     device = torch.device("cuda" if args.cuda else "cpu")
     
@@ -51,6 +49,8 @@ def train(args, io):
     #Try to load models
     if args.model == 'dgcnn':
         model = DGCNN(args).to(device)
+    elif args.model == 'dgcnnvae':
+        model = DGCNN_VAE(args).to(device)
     else:
         raise Exception("Not implemented")
     print(str(model))
@@ -69,6 +69,8 @@ def train(args, io):
     scheduler = CosineAnnealingLR(opt, args.epochs, eta_min=args.lr)
     
     criterion = MSELoss()
+    
+    best_val_loss = 1e16
 
     for epoch in range(args.epochs):
         print("Epoch " + str(epoch))
@@ -77,28 +79,42 @@ def train(args, io):
         ####################
         train_loss = 0.0
         train_sqloss = 0.0
+        train_mseloss = 0.0
+        train_kldloss = 0.0
+        
         count = 0.0
         model.train()
         train_pred = []
-        #train_true = []
+  
+
         for data, label in train_loader:
             
             data, label = data.to(device, dtype=torch.float), label.to(device).squeeze()
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
             opt.zero_grad()
-            logits = model(data)
-            loss = criterion(logits, data) 
+            rec,mu,var = model(data)
+            mse_loss = criterion(rec, data) 
+            kld_loss = torch.mean(-0.5 * torch.sum(1 + var - mu ** 2 - var.exp(), dim = 1), dim = 0)
+            loss = mse_loss + 0.7*kld_loss
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
             count += batch_size
             train_loss += loss.item() * batch_size
             train_sqloss += loss.item()**2 * batch_size
-            train_pred.append(loss.item() < 0.5)
+            train_mseloss += mse_loss.item() * batch_size
+            train_kldloss += kld_loss.item() *batch_size
+            train_pred.append(loss.item() < 100)
+        
         train_avg = train_loss*1.0/count
         train_var = train_sqloss*1.0/count - train_avg**2
+        train_mse_avg = train_mseloss*1.0/count
+        train_kld_avg = train_kldloss*1.0/count
+        
         writer.add_scalar('Mean Loss/train', train_avg, epoch)
+        writer.add_scalar('Mean MSE Loss/train', train_mse_avg, epoch)
+        writer.add_scalar('Mean KLD Loss/train', train_kld_avg, epoch)
         writer.add_scalar('Var Loss/train', train_var, epoch)
         scheduler.step()
         ####################
@@ -107,18 +123,19 @@ def train(args, io):
         test_loss = 0.0
         test_sqloss = 0.0
         count = 0.0
+        
         model.eval()
         test_pred = []
         for data, label in test_loader:
             data, label = data.to(device, dtype=torch.float), label.to(device).squeeze()
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
-            logits = model(data)
-            loss = criterion(logits[:,:,0], data[:,:,0]) 
+            rec,_,_ = model(data)
+            loss = criterion(rec, data) 
             count += 1
             test_loss += loss.item() * batch_size
             test_sqloss += loss.item()**2 * batch_size
-            test_pred.append(loss.item() < 0.5)
+            test_pred.append(loss.item() < 100)
         test_avg = test_loss*1.0/count
         writer.add_scalar('Mean Loss/test', test_avg, epoch)
         
@@ -135,12 +152,12 @@ def train(args, io):
             data, label = data.to(device, dtype=torch.float), label.to(device).squeeze()
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
-            logits = model(data)
-            loss = criterion(logits, data) 
+            rec,_,_ = model(data)[0]
+            loss = criterion(rec, data) 
             count += 1
             val_loss += loss.item() * batch_size
             val_sqloss += loss.item()**2 * batch_size
-            val_pred.append(loss.item() < 0.5)
+            val_pred.append(loss.item() < 100)
         val_avg = val_loss*1.0/count
         val_var = val_sqloss*1.0/count - val_avg**2
         writer.add_scalar('Mean Loss/val', val_avg, epoch)
@@ -153,9 +170,10 @@ def train(args, io):
         
         writer.add_figure("Confusion matrix", createConfusionMatrix(y_true,y_pred), epoch)
         
-        if epoch%100 == 0:
+        if val_avg < best_val_loss:
             io.cprint("saving model")
             torch.save(model.state_dict(), 'checkpoints/%s/models/model_%s.t7' % (args.exp_name,str(epoch))) 
+            best_val_loss = val_avg
 
 
 
@@ -165,8 +183,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Point Cloud Recognition')
     parser.add_argument('--exp_name', type=str, default='exp', metavar='N',
                         help='Name of the experiment')
-    parser.add_argument('--model', type=str, default='dgcnn', metavar='N',
-                        choices=['pointnet', 'dgcnn'],
+    parser.add_argument('--model', type=str, default='dgcnnvae', metavar='N',
+                        choices=['dgcnnvae', 'dgcnn'],
                         help='Model to use, [pointnet, dgcnn]')
     parser.add_argument('--dataset', type=str, default='modelnet40', metavar='N',
                         choices=['modelnet40'])
@@ -192,7 +210,7 @@ if __name__ == "__main__":
                         help='num of points to use')
     parser.add_argument('--dropout', type=float, default=0.5,
                         help='dropout rate')
-    parser.add_argument('--emb_dims', type=int, default=8, metavar='N',
+    parser.add_argument('--emb_dims', type=int, default=256, metavar='N',
                         help='Dimension of embeddings')
     parser.add_argument('--k', type=int, default=20, metavar='N',
                         help='Num of nearest neighbors to use')
