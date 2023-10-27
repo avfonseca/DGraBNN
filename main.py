@@ -152,7 +152,7 @@ def train(args, io):
             data, label = data.to(device, dtype=torch.float), label.to(device).squeeze()
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
-            rec,_,_ = model(data)[0]
+            rec,_,_ = model(data)
             loss = criterion(rec, data) 
             count += 1
             val_loss += loss.item() * batch_size
