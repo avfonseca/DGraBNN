@@ -138,10 +138,12 @@ class PreProcess:
     
     def create_multiscale_pc(self,resolution = [0.5,1,10,100,500]):
         
+        files_acc = glob.glob(os.path.join(self.out_pc, "*_acc.ply"))
         files = glob.glob(os.path.join(self.out_pc, "*.ply"))
         
         for voxel_size in resolution:
-
+            
+            #Create full multiscale pointcloud
             pcds = o3d.io.read_point_cloud(files[0])
             pcds = pcds.voxel_down_sample(voxel_size=voxel_size)
             for i in range(1,len(files)):
@@ -150,4 +152,17 @@ class PreProcess:
                 pcds.points.extend(np.asarray(pcd_down.points))
         
             o3d.io.write_point_cloud(os.path.join(self.out_multiscale,"pc_" + str(voxel_size).replace(".","")+ ".ply"), pcds)
+            
+            
+            #Create clean multiscale pointcloud
+            pcds = o3d.io.read_point_cloud(files_acc[0])
+            pcds = pcds.voxel_down_sample(voxel_size=voxel_size)
+            for i in range(1,len(files_acc)):
+                pcd = o3d.io.read_point_cloud(files[i])
+                pcd_down = pcd.voxel_down_sample(voxel_size=voxel_size)
+                pcds.points.extend(np.asarray(pcd_down.points))
+        
+            o3d.io.write_point_cloud(os.path.join(self.out_multiscale,"pc_" + str(voxel_size).replace(".","")+ "_acc.ply"), pcds)
+            
+            
     

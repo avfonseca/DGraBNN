@@ -12,7 +12,7 @@ def knn(x, k):
     return idx
 
 
-def get_graph_feature(x, k=20, idx=None):
+def get_graph_feature(x, k=16, idx=None):
     batch_size = x.size(0)
     num_points = x.size(2)
     x = x.view(batch_size, -1, num_points)

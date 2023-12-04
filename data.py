@@ -89,8 +89,11 @@ class HydroNet(Dataset):
         pc_dict = {}
         
         for i in range(len(res_list)):
-        
-            pc = o3d.io.read_point_cloud(os.path.join(self.BASE_DIR, "data", survey, "multi_scale", "pc_" + str(res_list[i]) + ".ply"))
+            
+            if (self.partition == "test" or self.partition == "val"):
+                pc = o3d.io.read_point_cloud(os.path.join(self.BASE_DIR, "data", survey, "multi_scale", "pc_" + str(res_list[i]) + ".ply"))
+            else:
+                pc = o3d.io.read_point_cloud(os.path.join(self.BASE_DIR, "data", survey, "multi_scale", "pc_" + str(res_list[i]) + "_acc.ply"))
             
             mean,var = pc.compute_mean_and_covariance()
             

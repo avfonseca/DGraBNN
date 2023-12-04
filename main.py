@@ -36,8 +36,10 @@ def _init_():
 def train(args, io):
     train_ds = HydroNet(num_points=args.num_points, survey_list=['hampton'], resolution = [1])
     test_ds = HydroNet(num_points=args.num_points, partition = 'test', survey_list=['hampton'], resolution = [1])
+    val_ds = HydroNet(num_points=args.num_points, partition = 'val', survey_list=['hampton'], resolution = [1])
     
-    train_dataset, val_dataset = random_split(train_ds, [0.8, 0.2])
+    train_dataset, _ = random_split(train_ds, [0.8, 0.2])
+    _, val_dataset = random_split(val_ds, [0.8, 0.2])
     
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, drop_last=True)
@@ -131,7 +133,7 @@ def train(args, io):
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
             rec,_,_ = model(data)
-            loss = criterion(rec, data) 
+            loss = criterion(rec[:,:,-1], data[:,:,-1]) 
             count += 1
             test_loss += loss.item() * batch_size
             test_sqloss += loss.item()**2 * batch_size
@@ -153,7 +155,7 @@ def train(args, io):
             data = data.permute(0, 2, 1)
             batch_size = data.size()[0]
             rec,_,_ = model(data)
-            loss = criterion(rec, data) 
+            loss = criterion(rec[:,:,-1], data[:,:,-1]) 
             count += 1
             val_loss += loss.item() * batch_size
             val_sqloss += loss.item()**2 * batch_size
@@ -168,7 +170,7 @@ def train(args, io):
         y_true = np.concatenate((np.ones(np.array(train_pred).shape),np.ones(np.array(val_pred).shape),np.zeros(np.array(test_pred).shape)))
     
         
-        writer.add_figure("Confusion matrix", createConfusionMatrix(y_true,y_pred), epoch)
+        #writer.add_figure("Confusion matrix", createConfusionMatrix(y_true,y_pred), epoch)
         
         if val_avg < best_val_loss:
             io.cprint("saving model")
@@ -212,7 +214,7 @@ if __name__ == "__main__":
                         help='dropout rate')
     parser.add_argument('--emb_dims', type=int, default=256, metavar='N',
                         help='Dimension of embeddings')
-    parser.add_argument('--k', type=int, default=20, metavar='N',
+    parser.add_argument('--k', type=int, default=16, metavar='N',
                         help='Num of nearest neighbors to use')
     parser.add_argument('--model_path', type=str, default='', metavar='N',
                         help='Pretrained model path')
